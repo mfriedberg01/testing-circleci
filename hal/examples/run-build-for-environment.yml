@@ -1,0 +1,29 @@
+description: |
+    Start a build for a specific environment. The default behavior creates a build job that can be deployed to
+    any environment. This extra parameter creates a build for a specific environment, so it can load
+    environment-specific settings or secrets. But the build can only be deployed to the same environment.
+
+usage:
+    version: 2.1
+
+    orbs:
+        hal: quickenloans/hal@x.y.z
+
+    workflows:
+        my_example_pipeline:
+            jobs:
+                - hal/checkout:
+                    workspace-root: '.' # Default value (can be deleted)
+                    persist-path: '.'   # Default value (can be deleted)
+
+                - hal/publish:
+                    requires: [ hal/checkout ]
+                    context: 'my_secrets'
+
+                    hal-appid: 'XXXXXX'
+                    environment: 'test'
+
+                    workspace-root: '.'       # Default value (can be deleted)
+                    job-file: '.hal_build_id' # Default value (can be deleted)
+                    artifact-path: './mybuildfiles'
+                    artifact-compression: 'tgz'

@@ -1,0 +1,35 @@
+description: |
+    Deploy a build artifact to a deployment setting in the Hal.
+
+usage:
+    version: 2.1
+
+    orbs:
+        hal: quickenloans/hal@x.y.z
+
+    workflows:
+        my_example_pipeline:
+            jobs:
+                - hal/checkout
+
+                - hal/publish:
+                    requires: [ hal/checkout ]
+                    context: 'my_secrets'
+
+                    hal-appid: 'XXXXXX'
+
+                - hal/deploy:
+                    name: 'hal/deploy-test'
+                    requires: [ hal/publish ]
+                    context: 'my_secrets'
+
+                    deploy-setting-id: 'YYYYYY'
+                    job-file: '.hal_deploy_id__test'
+
+                - hal/deploy:
+                    name: 'hal/deploy-prod'
+                    requires: [ hal/deploy-test ]
+                    context: 'my_secrets'
+
+                    deploy-setting-id: 'ZZZZZZ'
+                    job-file: '.hal_deploy_id__prod'

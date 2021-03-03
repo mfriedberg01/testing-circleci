@@ -1,0 +1,127 @@
+description: >
+    Generate an authentication token and log into ECR.
+
+parameters:
+    organization:
+        description: 'ID of the Hal organization the ECR repository belongs to.'
+        type: string
+    environment:
+        description: 'Environment ID or Name that the desired AWS account belongs to.'
+        type: string
+    region:
+        description: 'AWS region to authenticate with.'
+        type: string
+
+    api-token-var:
+        description: 'Environment variable that is read for the Hal API token.'
+        default: HAL_API_TOKEN
+        type: env_var_name
+    base-endpoint:
+        description: 'Base endpoint of the API.'
+        default: 'https://hal.zone/api'
+        type: string
+
+steps:
+    - run:
+        name: 'Generate Docker Credentials - Check dependencies'
+        command: |
+            clrd() {
+                echo -e "\033[${3:-0};$2m$1\033[0m"
+            }
+            clrn() {
+                echo -n -e "\033[${3:-0};$2m$1\033[0m"
+            }
+            ensure_is_installed() {
+                local -r binary_name="$1"
+
+                if [[ ! $(command -v ${binary_name}) ]]; then
+                    clrn "ERROR: \"" 31
+                    clrn "${binary_name}" 39
+                    clrd "\" is required, but is not installed" 31
+                    exit 1
+                fi
+            }
+
+            if command -v jq >> /dev/null 2>&1; then
+                echo "jq is already installed..."
+            else
+                if command -v apt-get >> /dev/null 2>&1; then
+                    sudo_me="sudo "
+                    if [ "$(whoami)" == "root" ] ; then
+                        sudo_me=""
+                    fi
+
+                    ${sudo_me} apt-get update
+                    ${sudo_me} apt-get install jq -y
+                else
+                    clrn "jq is required. Please install it before running this step." 31
+                    exit 1
+                fi
+            fi
+
+            ensure_is_installed "docker"
+
+    - run:
+        name: 'Generate Docker Credentials - Authenticate with AWS ECR (docker) in << parameters.environment >>'
+        command: |
+            clrd() {
+                echo -e "\033[${3:-0};$2m$1\033[0m"
+            }
+            clrn() {
+                echo -n -e "\033[${3:-0};$2m$1\033[0m"
+            }
+
+            if [[ "<< parameters.api-token-var >>" != "HAL_API_TOKEN" ]] ; then
+                export HAL_API_TOKEN="${<< parameters.api-token-var >>}"
+            fi
+
+            scratch_dir=$(mktemp -d || mktemp -d -t 'tmp')
+            temp_file="${scratch_dir}/curlresponse.txt"
+
+            endpoint_url="<< parameters.base-endpoint >>/organizations/<< parameters.organization >>/generate-aws-docker-credentials"
+            query_params="?region=<< parameters.region >>&environment=<< parameters.environment >>"
+
+            clrd "┌──────────────────────────────────────────────────────────────────────────┐" 33
+            clrd "│  FETCH AUTH CREDENTIALS                                                  │" 33
+            clrd "└──────────────────────────────────────────────────────────────────────────┘" 33
+            echo
+            echo -n "Endpoint                   " ; clrd "${endpoint_url}${query_params}" 36
+            echo
+
+            curl_flags=(
+                --show-error \
+                --silent \
+                --location \
+                --output /dev/stderr \
+                --write-out "%{http_code}" \
+                --request POST \
+                --header "Authorization: token ${HAL_API_TOKEN}"
+            )
+
+            curl_response_code=$(curl "${curl_flags[@]}" "${endpoint_url}${query_params}" 2>${temp_file})
+            if [ "$curl_response_code" -ne 200 ] ; then
+                echo ; clrd "Response code:" 31 ; echo "${curl_response_code}"
+                echo ; clrd "Response body:" 31
+                cat "${temp_file}" | jq
+                echo
+
+                [ -f "$temp_file" ] && rm -f $temp_file
+                exit 1
+            fi
+
+            docker_registry=$(jq -r ".proxy_endpoint" "${temp_file}")
+            docker_token=$(jq -r ".authorization_token" "${temp_file}")
+
+            clrd "┌──────────────────────────────────────────────────────────────────────────┐" 33
+            clrd "│  DOCKER LOGIN                                                            │" 33
+            clrd "└──────────────────────────────────────────────────────────────────────────┘" 33
+            echo
+            echo -n "Docker Registry            " ; clrd "${docker_registry}" 36
+            echo
+
+            [ -f "$temp_file" ] && rm -f $temp_file
+
+            echo "${docker_token}" | docker login \
+                --username AWS \
+                --password-stdin \
+                "${docker_registry}"

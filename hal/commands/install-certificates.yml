@@ -1,0 +1,16 @@
+description: >
+    Install company certificate bundle.
+
+    Compatible with RHEL/CentOS.
+    Currently untested for other distros or operating systems.
+
+parameters:
+    installer-url:
+        description: 'URL of bash install script'
+        default: 'https://tools.circleci.foc.zone/install-certs'
+        type: string
+
+steps:
+    - run:
+        name: 'Install QL Certificates'
+        command: 'curl -sL << parameters.installer-url >> | bash -'

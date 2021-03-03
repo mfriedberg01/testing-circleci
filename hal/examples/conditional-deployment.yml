@@ -1,0 +1,48 @@
+description: |
+    Orb conditions are static and cannot be controlled at runtime. This example shows how to conditionally run
+    a deployment or job based on other output previously in your pipeline.
+
+    This is extremely useful for monorepos, or when you do not want to deploy certain components based on some
+    conditions (such as no detected changes to files).
+
+usage:
+    version: 2.1
+
+    orbs:
+        hal: quickenloans/hal@x.y.z
+
+    commands:
+        determine_if_project_changed:
+            steps:
+                - run:
+                    name: 'Detect if project has changed files'
+                    command: |
+                        # Run some process or script at your control.
+                        is_changed=$(./is-project-changed.sh)
+
+                        if [ "${is_changed}" != "1" ] ; then
+                            # This variable is detected by hal jobs in this Orb, which
+                            # silently continue (exit code 0) but bypass Hal API calls.
+                            echo "export HAL_SKIP_JOB=1" >> $BASH_ENV
+                        fi
+
+    workflows:
+        my_example_pipeline:
+            jobs:
+                - hal/checkout
+
+                - hal/publish:
+                    requires: [ hal/checkout ]
+                    context: 'my_secrets'
+
+                    hal-appid: 'XXXXXX'
+                    before-steps:
+                        - determine_if_project_changed
+
+                - hal/deploy:
+                    requires: [ hal/publish ]
+                    context: 'my_secrets'
+
+                    deploy-setting-id: 'YYYYYY'
+                    before-steps:
+                        - determine_if_project_changed

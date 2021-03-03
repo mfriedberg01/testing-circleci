@@ -1,0 +1,30 @@
+description: |
+    Perform a git checkout and persist project files for further jobs and steps.
+
+    Usage of this job is not required, but encourages check out of source code once and persisting to your
+    pipeline workspace so that all jobs may share the same files.
+
+parameters:
+    workspace-root:
+        description: |
+            Workspace root path that is either an absolute path or a path relative to the working directory.
+            Defaults to "." (the working directory)
+        default: '.'
+        type: string
+
+    persist-path:
+        description: |
+            Path within the workspace to persist.
+            Defaults to "." (the entire working directory)
+        default: '.'
+        type: string
+
+executor:
+    name: base
+
+steps:
+    - checkout
+
+    - persist_to_workspace:
+        root: '<< parameters.workspace-root >>'
+        paths: [ << parameters.persist-path >> ]

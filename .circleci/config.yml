@@ -1,0 +1,66 @@
+version: 2
+
+attach_workspace: &attach_workspace
+  attach_workspace:
+    at: '.'
+
+persist_workspace: &persist_workspace
+  persist_to_workspace:
+    root: '.'
+    paths: [ '.' ]
+
+workflows:
+  version: 2
+  pipeline:
+    jobs:
+      - install_dependencies
+
+      - build_and_publish_images:
+          requires: [ install_dependencies ]
+          context: 'docker-dtr-credentials'
+
+jobs:
+  install_dependencies:
+    docker: [ {image: 'circleci/buildpack-deps:stretch'} ]
+    working_directory: '~/project'
+    steps:
+      - checkout
+      - *persist_workspace
+
+  build_and_publish_images:
+    docker: [ {image: 'circleci/buildpack-deps:stretch'} ]
+    environment:
+      - DOCKER_REGISTRY: 'qldockerdtr.rockfin.com'
+      - DOCKER_REPO: 'circleci/hal-integration'
+      - DOCKER_LOCAL_TAG: 'hal-publisher:latest'
+
+    steps:
+      - *attach_workspace
+      - setup_remote_docker
+      - run: 'curl -sL https://tools.circleci.foc.zone/install-certs-remote-docker | bash -'
+
+      - run:
+          name: 'Build publisher image'
+          command: |
+            docker build -t "${DOCKER_LOCAL_TAG}" .
+
+      - run:
+          name: 'Publish to qldockerdtr.rockfin.com'
+          command: |
+            if [ "$CIRCLE_BRANCH" != "master" ] ; then
+              echo "Skipping image publishing. Images are only published when running on master branch."
+              exit 0
+            fi
+
+            target_docker_repo="${DOCKER_REGISTRY}/${DOCKER_REPO}"
+            full_image="${target_docker_repo}:hal-publisher-latest"
+
+            docker tag \
+                "${DOCKER_LOCAL_TAG}" \
+                "${full_image}"
+
+            docker login ${DOCKER_REGISTRY} \
+                -u "${DOCKER_USERNAME}" \
+                -p "${DOCKER_TOKEN}"
+
+            docker push "${full_image}"

@@ -1,0 +1,29 @@
+description: |
+    Deploy to a deployment setting in the Hal. This is compatible with deployment types
+    that do not require artifacts such as:
+    - CodeDeploy Blue/Green
+    - Elastic Beanstalk Blue/Green
+
+usage:
+    version: 2.1
+
+    orbs:
+        hal: quickenloans/hal@x.y.z
+
+    workflows:
+        my_example_pipeline:
+            jobs:
+                - hal/checkout:
+                    workspace-root: '.' # Default value (can be deleted)
+                    persist-path: '.'   # Default value (can be deleted)
+
+                - hal/deploy:
+                    requires: [ hal/checkout ]
+                    context: 'my_secrets'
+
+                    hal-appid: 'XXXXXX'
+                    deploy-setting-id: 'YYYYYY'
+                    no-build: true
+                    wait-for-running-jobs: true # Default value (can be deleted)
+                    workspace-root: '.'         # Default value (can be deleted)
+                    job-file: '.hal_deploy_id'  # Default value (can be deleted)

@@ -1,0 +1,12 @@
+description: |
+    Base Linux docker image used for CircleCI convenience images.
+    Recommended for simple pipeline jobs such as git checkouts or docker CLI usage.
+
+parameters:
+    tag:
+        description: 'Docker tag to use.'
+        default: '2020.06'
+        type: string
+
+docker:
+    - image: 'cimg/base:<<parameters.tag>>'

@@ -1,0 +1,32 @@
+version: '2.1'
+description: 'An Example Orb For Rocket Mortgage Technology'
+
+display:
+    home_url: 'https://github.com/quickenloans'
+    source_url: 'https://github.com/quickenloans/circleci-orbs'
+
+commands:
+    hello:
+        description: Greet the user politely
+
+        parameters:
+            username:
+                type: string
+                description: A name of the user to greet
+
+        steps:
+            - run: 'echo Hello << parameters.username >>'
+
+examples:
+    simple_greeting:
+        description: Greeting a user named Anna
+        usage:
+            version: 2.1
+            orbs:
+                example: quickenloans/example@1.2.3
+            jobs:
+                build:
+                    machine: true
+                    steps:
+                        - example/hello:
+                            username: 'Anna'

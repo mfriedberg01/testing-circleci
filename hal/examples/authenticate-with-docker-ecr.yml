@@ -1,0 +1,86 @@
+description: |
+    This example authenticates with two different AWS ECR registries.
+
+    This is a common flow when promoting docker images between accounts or "test" and "prod"
+    docker repositories during a CI/CD pipeline.
+
+usage:
+    version: 2.1
+
+    orbs:
+        hal: quickenloans/hal@x.y.z
+
+    workflows:
+        my_example_pipeline:
+            jobs:
+                - hal/checkout
+
+                - build_image_and_publish_to_test:
+                    requires: [ hal/checkout ]
+                    context: 'my_secrets_nonprod'
+
+                - publish_docker_images_prod:
+                    requires: [ build_image_and_publish_to_test ]
+                    context: 'my_secrets_prod'
+
+    executors:
+        dockerbuild:
+            working_directory: '~/project'
+            docker:
+                - image: 'cimg/python:3.6'
+
+    jobs:
+        build_image_and_publish_to_test:
+            executor: dockerbuild
+            environment:
+                HAL_ORGANIZATION: '0000'
+                ECR_REGION: 'us-east-1'
+
+            steps:
+                - setup_remote_docker:
+                    docker_layer_caching: true
+                - run:
+                    command: |
+                        docker build \
+                            -t "000000000000.dkr.ecr.us-east-1.amazonaws.com/myrepo:mytag" \
+                            .
+
+                - hal/login-to-ecr:
+                    organization: '$HAL_ORGANIZATION'
+                    environment: 'test'
+                    region: '$ECR_REGION'
+
+                - run:
+                    command: |
+                        docker push "000000000000.dkr.ecr.us-east-1.amazonaws.com/myrepo:mytag"
+
+        publish_docker_images_prod:
+            executor: dockerbuild
+            environment:
+                HAL_ORGANIZATION: '0000'
+                ECR_REGION: 'us-east-1'
+
+            steps:
+                - setup_remote_docker:
+                    docker_layer_caching: true
+
+                # Authenticate with both test, and prod registries:
+                - hal/login-to-ecr:
+                    organization: '$HAL_ORGANIZATION'
+                    environment: 'test'
+                    region: '$ECR_REGION'
+                    api-token-var: 'test_HAL_API_TOKEN'
+                - hal/login-to-ecr:
+                    organization: '$HAL_ORGANIZATION'
+                    environment: 'prod'
+                    region: '$ECR_REGION'
+
+                - run:
+                    command: |
+                        docker pull 000000000000.dkr.ecr.us-east-1.amazonaws.com/myrepo:mytag
+
+                        docker tag \
+                            000000000000.dkr.ecr.us-east-1.amazonaws.com/myrepo:mytag \
+                            111111111111.dkr.ecr.us-east-1.amazonaws.com/myrepo-prod:mytag
+
+                        docker push 111111111111.dkr.ecr.us-east-1.amazonaws.com/myrepo-prod:mytag

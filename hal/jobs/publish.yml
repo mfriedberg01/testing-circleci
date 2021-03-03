@@ -1,0 +1,193 @@
+description: |
+    Use this job to publish an artifact from CircleCI to the Hal Deployment Portal.
+
+    This job requires HAL_API_TOKEN to be set in a context variable.
+
+parameters:
+    # Hal settings
+    hal-appid:
+        description: 'Hal Application ID.'
+        type: string
+    timeout-minutes:
+        description: 'The maximum time in minutes to allow for the job to finish.'
+        default: 10
+        type: integer
+    environment:
+        description: 'Name or ID of a Hal environment. Leave blank to create an environment-independent build (default behavior).'
+        default: ''
+        type: string
+    from_deployment_setting:
+        description: 'Should that be ID of the deployment setting to use to import settings into this job. Inherit saved parameters, secrets, and other settings from this deployment setting.'
+        default: ''
+        type: string
+
+    arguments:
+        description: 'If you wish to pass any additional arguments to the command'
+        type: string
+        default: ''
+    skip-job-var:
+        description: 'Environment variable that if set to "1" will skip calls to Hal. Used to control conditional deploys (Useful for monorepos)'
+        default: HAL_SKIP_JOB
+        type: env_var_name
+    api-token-var:
+        description: 'Environment variable that is read for the Hal API token.'
+        default: HAL_API_TOKEN
+        type: env_var_name
+
+    # File persistence
+    attach-workspace:
+        description: 'Attach to an existing workspace? Default is true'
+        default: true
+        type: boolean
+    workspace-root:
+        description: |
+            Workspace root path that is either an absolute path or a path relative to the working directory.
+            Defaults to "." (the working directory)
+        default: '.'
+        type: string
+    persist-job-to-workspace:
+        description: 'Persist job ID to workspace? Default is true'
+        default: true
+        type: boolean
+    job-file:
+        description: 'File to write Hal job ID'
+        default: '.hal_build_id'
+        type: string
+
+    # Artifact options
+    artifact-path:
+        description: 'Path to files to pack up into the build artifact. Defaults to the working directory. Ignored if "artifact-file" is used.'
+        default: '.'
+        type: string
+    artifact-compression:
+        description: 'Compression type of artifact: Must be one of "zip" or "tgz".'
+        default: 'zip'
+        type: enum
+        enum: ['zip', 'tgz']
+    artifact-file:
+        description: 'Specify an already built artifact in zip or tgz format. Ignored if "artifact-path" is used.'
+        default: ''
+        type: string
+
+    # Additional steps
+    before-steps:
+        description: 'Steps that will be executed after workspace has been attached, but before Hal API call.'
+        type: steps
+        default: []
+
+    # Executor options
+    # executor-repository:
+    #     description: '[DO NOT CHANGE] Docker registry/repository to use for the executor.'
+    #     default: 'qldockerdtr.rockfin.com/circleci/hal-integration'
+    #     type: string
+    # executor-tag:
+    #     description: '[DO NOT CHANGE] Docker tag to use for the executor.'
+    #     default: 'hal-publisher'
+    #     type: string
+
+executor:
+    name: default
+    # tag: << parameters.executor-tag >>
+    # repository: << parameters.executor-repository >>
+
+steps:
+    - when:
+        condition: << parameters.attach-workspace >>
+        steps:
+            - attach_workspace:
+                at: << parameters.workspace-root >>
+
+    - steps: << parameters.before-steps >>
+
+    - run:
+        name: 'Pack artifact'
+        environment:
+            - HAL_DIST_DIR:      '<<parameters.artifact-path>>'
+            - HAL_ARTIFACT:      'build.<<parameters.artifact-compression>>'
+            - HAL_ARTIFACT_PATH: '/tmp/build.<<parameters.artifact-compression>>'
+            - HAL_COMPRESSION:   '<<parameters.artifact-compression>>'
+            - HAL_REMOVE_GIT:    '1'
+
+        command: |
+            if [[ "${<< parameters.skip-job-var >>}" == "1" ]] ; then
+                echo "Skipping..."
+                exit 0
+            fi
+
+            if [[ -z "<< parameters.artifact-file >>" ]] ; then
+                pack-build-to-zip
+                exit 0
+            fi
+
+            # Move artifact into the source location
+            if [ ! -f "<< parameters.artifact-file >>" ] ; then
+                echo "Artifact not found: \"<< parameters.artifact-file >>\""
+                exit 1
+            fi
+
+            mv "<< parameters.artifact-file >>" "${HAL_ARTIFACT_PATH}"
+
+    - store_artifacts:
+        path: '/tmp/build.<<parameters.artifact-compression>>'
+        destination: 'build.<<parameters.artifact-compression>>'
+
+    - when:
+        condition: '<< parameters.environment >>'
+        steps:
+            - run:
+                name: 'Publish build to Hal (<< parameters.environment >>)'
+                environment:
+                    - HAL_APP_ID: '<<parameters.hal-appid>>'
+                    - HAL_ARTIFACT_OBJECT: 'build.<<parameters.artifact-compression>>'
+                    - HAL_ARTIFACT_PATH: '/tmp/build.<<parameters.artifact-compression>>'
+                    - HAL_API_WAIT: '<<parameters.timeout-minutes>>'
+                    - HAL_OUTPUT_FILE: '<<parameters.job-file>>'
+
+                command: |
+                    if [[ "${<< parameters.skip-job-var >>}" == "1" ]] ; then
+                        # Ensure there is a file (even if empty), otherwise persist step will fail.
+                        touch "<< parameters.job-file >>"
+                        echo "Skipping..."
+                        exit 0
+                    fi
+
+                    if [[ "<< parameters.api-token-var >>" != "HAL_API_TOKEN" ]] ; then
+                        echo "export HAL_API_TOKEN=${<< parameters.api-token-var >>}" >> $BASH_ENV
+                    fi
+
+                    publish-build-to-hal \
+                        --environment "<< parameters.environment >>"<<# parameters.arguments >> << parameters.arguments >><</parameters.arguments >> \
+                        <<# parameters.from_deployment_setting >> --from-setting << parameters.from_deployment_setting >><</parameters.from_deployment_setting >>
+
+    - unless:
+        condition: '<< parameters.environment >>'
+        steps:
+            - run:
+                name: 'Publish build to Hal (any environment)'
+                environment:
+                    - HAL_APP_ID: '<<parameters.hal-appid>>'
+                    - HAL_ARTIFACT_OBJECT: 'build.<<parameters.artifact-compression>>'
+                    - HAL_ARTIFACT_PATH: '/tmp/build.<<parameters.artifact-compression>>'
+                    - HAL_API_WAIT: '<<parameters.timeout-minutes>>'
+                    - HAL_OUTPUT_FILE: '<<parameters.job-file>>'
+
+                command: |
+                    if [[ "${<< parameters.skip-job-var >>}" == "1" ]] ; then
+                        # Ensure there is a file (even if empty), otherwise persist step will fail.
+                        touch "<< parameters.job-file >>"
+                        echo "Skipping..."
+                        exit 0
+                    fi
+
+                    if [[ "<< parameters.api-token-var >>" != "HAL_API_TOKEN" ]] ; then
+                        echo "export HAL_API_TOKEN=${<< parameters.api-token-var >>}" >> $BASH_ENV
+                    fi
+
+                    publish-build-to-hal<<# parameters.arguments >> << parameters.arguments >><</parameters.arguments >>
+
+    - when:
+        condition: << parameters.persist-job-to-workspace >>
+        steps:
+            - persist_to_workspace:
+                root: '<< parameters.workspace-root >>'
+                paths: [ << parameters.job-file >> ]

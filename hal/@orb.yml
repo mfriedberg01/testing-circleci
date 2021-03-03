@@ -1,0 +1,6 @@
+version: '2.1'
+description: 'Integrate with the Hal Deployment Portal - Rocket Mortgage Technology'
+
+display:
+    home_url: 'https://hal.zone'
+    source_url: 'https://github.com/quickenloans/circleci-orbs'

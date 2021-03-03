@@ -1,0 +1,165 @@
+description: |
+    Use this job to start a deploy job in the Hal Deployment Portal.
+
+    This job requires HAL_API_TOKEN to be set in a context variable.
+
+parameters:
+    # Hal settings
+    deploy-setting-id:
+        description: 'Name or ID of a Hal deployment setting.'
+        type: string
+
+    hal-appid:
+        description: 'Hal Application ID. Required if deploying without a build (By setting the "no-build" variable).'
+        default: ''
+        type: string
+    no-build:
+        description: 'Set to true if using a deployment type that uses no artifacts such as Blue/Green Triggers and URL Swaps.'
+        default: false
+        type: boolean
+
+    timeout-minutes:
+        description: 'The maximum time in minutes to allow for the job to finish.'
+        default: 20
+        type: integer
+
+    wait-for-running-jobs:
+        description: 'Wait for concurrent jobs to finish running.'
+        default: true
+        type: boolean
+
+    arguments:
+        description: 'If you wish to pass any additional arguments to the command'
+        type: string
+        default: ''
+    skip-job-var:
+        description: 'Environment variable that if set to "1" will skip calls to Hal. Used to control conditional deploys (Useful for monorepos)'
+        default: HAL_SKIP_JOB
+        type: env_var_name
+    api-token-var:
+        description: 'Environment variable that is read for the Hal API token.'
+        default: HAL_API_TOKEN
+        type: env_var_name
+
+    # File persistence
+    attach-workspace:
+        description: 'Attach to an existing workspace? Default is true'
+        default: true
+        type: boolean
+    workspace-root:
+        description: |
+            Workspace root path that is either an absolute path or a path relative to the working directory.
+            Defaults to "." (the working directory)
+        default: '.'
+        type: string
+    persist-job-to-workspace:
+        description: 'Persist job ID to workspace? Default is true'
+        default: true
+        type: boolean
+    build-file:
+        description: 'File to read Hal job ID for the build being deployed'
+        default: '.hal_build_id'
+        type: string
+    job-file:
+        description: 'File to write Hal job ID of the deployment'
+        default: '.hal_deploy_id'
+        type: string
+
+    # Additional steps
+    before-steps:
+        description: 'Steps that will be executed after workspace has been attached, but before Hal API call.'
+        type: steps
+        default: []
+
+executor:
+    name: default
+
+steps:
+    - when:
+        condition: << parameters.attach-workspace >>
+        steps:
+            - attach_workspace:
+                at: << parameters.workspace-root >>
+
+    - steps: << parameters.before-steps >>
+
+    - when:
+        condition: '<< parameters.wait-for-running-jobs >>'
+        steps:
+            - run:
+                name: 'Wait for concurrent running jobs'
+
+                environment:
+                    - HAL_DEPLOYMENT_SETTING_ID: '<<parameters.deploy-setting-id>>'
+                    - HAL_API_WAIT: '<<parameters.timeout-minutes>>'
+
+                command: |
+                    if [[ "${<< parameters.skip-job-var >>}" == "1" ]] ; then
+                        echo "Skipping..."
+                        exit 0
+                    fi
+
+                    if [[ "<< parameters.api-token-var >>" != "HAL_API_TOKEN" ]] ; then
+                        echo "export HAL_API_TOKEN=${<< parameters.api-token-var >>}" >> $BASH_ENV
+                    fi
+
+                    wait-for-running-job
+
+    - when:
+        condition: '<< parameters.no-build >>'
+        steps:
+            - run:
+                name: 'Deploy to Hal (App: <<parameters.hal-appid>>)'
+                environment:
+                    - HAL_APP_ID: '<<parameters.hal-appid>>'
+                    - HAL_TARGETS: '<<parameters.deploy-setting-id>>'
+                    - HAL_API_WAIT: '<<parameters.timeout-minutes>>'
+                    - HAL_OUTPUT_FILE: '<<parameters.job-file>>'
+                    - HAL_NO_BUILD: '1'
+
+                command: |
+                    if [[ "${<< parameters.skip-job-var >>}" == "1" ]] ; then
+                        # Ensure there is a file (even if empty), otherwise persist step will fail.
+                        touch "<< parameters.job-file >>"
+                        echo "Skipping..."
+                        exit 0
+                    fi
+
+                    if [[ "<< parameters.api-token-var >>" != "HAL_API_TOKEN" ]] ; then
+                        echo "export HAL_API_TOKEN=${<< parameters.api-token-var >>}" >> $BASH_ENV
+                    fi
+
+                    deploy-to-hal<<# parameters.arguments >> << parameters.arguments >><</parameters.arguments >>
+
+    - unless:
+        condition: '<< parameters.no-build >>'
+        steps:
+            - run:
+                name: 'Deploy build to Hal'
+                environment:
+                    - HAL_APP_ID: '<<parameters.hal-appid>>'
+                    - HAL_TARGETS: '<<parameters.deploy-setting-id>>'
+                    - HAL_API_WAIT: '<<parameters.timeout-minutes>>'
+                    - HAL_OUTPUT_FILE: '<<parameters.job-file>>'
+                    - HAL_BUILD_FILE: '<<parameters.build-file>>'
+
+                command: |
+                    if [[ "${<< parameters.skip-job-var >>}" == "1" ]] ; then
+                        # Ensure there is a file (even if empty), otherwise persist step will fail.
+                        touch "<< parameters.job-file >>"
+                        echo "Skipping..."
+                        exit 0
+                    fi
+
+                    if [[ "<< parameters.api-token-var >>" != "HAL_API_TOKEN" ]] ; then
+                        echo "export HAL_API_TOKEN=${<< parameters.api-token-var >>}" >> $BASH_ENV
+                    fi
+
+                    deploy-to-hal<<# parameters.arguments >> << parameters.arguments >><</parameters.arguments >>
+
+    - when:
+        condition: << parameters.persist-job-to-workspace >>
+        steps:
+            - persist_to_workspace:
+                root: '<< parameters.workspace-root >>'
+                paths: [ << parameters.job-file >> ]

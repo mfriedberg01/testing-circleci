@@ -1,0 +1,15 @@
+description: |
+    Greeting a user named Anna
+
+usage:
+    version: 2.1
+
+    orbs:
+        example: quickenloans/example@x.y.z
+
+    jobs:
+        build:
+            machine: true
+            steps:
+                - example/hello:
+                    username: 'Anna'

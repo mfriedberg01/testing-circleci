@@ -1,0 +1,124 @@
+description: |
+    Use this job to start a build job in the Hal Deployment Portal.
+    This job is used to trigger a build within Hal, and cannot pass any artifacts or files to Hal, as Hal will
+    clone the repository directly from git. Please see "publish" job which can pass build artifacts to Hal.
+
+    This job requires HAL_API_TOKEN to be set in a context variable.
+
+parameters:
+    # Hal settings
+    hal-appid:
+        description: 'Hal Application ID.'
+        type: string
+    timeout-minutes:
+        description: 'The maximum time in minutes to allow for the job to finish.'
+        default: 10
+        type: integer
+    environment:
+        description: 'Name or ID of a Hal environment. Leave blank to create an environment-independent build (default behavior).'
+        default: ''
+        type: string
+    from_deployment_setting:
+        description: 'Should that be ID of the deployment setting to use to import settings into this job. Inherit saved parameters, secrets, and other settings from this deployment setting.'
+        default: ''
+        type: string
+
+    arguments:
+        description: 'If you wish to pass any additional arguments to the command'
+        type: string
+        default: ''
+    skip-job-var:
+        description: 'Environment variable that if set to "1" will skip calls to Hal. Used to control conditional deploys (Useful for monorepos)'
+        default: HAL_SKIP_JOB
+        type: env_var_name
+    api-token-var:
+        description: 'Environment variable that is read for the Hal API token.'
+        default: HAL_API_TOKEN
+        type: env_var_name
+
+    # File persistence
+    workspace-root:
+        description: |
+            Workspace root path that is either an absolute path or a path relative to the working directory.
+            Defaults to "." (the working directory)
+        default: '.'
+        type: string
+    persist-job-to-workspace:
+        description: 'Persist job ID to workspace? Default is true'
+        default: true
+        type: boolean
+    job-file:
+        description: 'File to write Hal job ID'
+        default: '.hal_build_id'
+        type: string
+
+    # Additional steps
+    before-steps:
+        description: 'Steps that will be executed after workspace has been attached, but before Hal API call.'
+        type: steps
+        default: []
+
+executor:
+    name: default
+
+steps:
+    - steps: << parameters.before-steps >>
+
+    - when:
+        condition: '<< parameters.environment >>'
+        steps:
+            - run:
+                name: 'Start build in Hal (<< parameters.environment >>)'
+                environment:
+                    - HAL_APP_ID: '<<parameters.hal-appid>>'
+                    - HAL_ARTIFACT_PATH: ''
+                    - HAL_API_WAIT: '<<parameters.timeout-minutes>>'
+                    - HAL_OUTPUT_FILE: '<<parameters.job-file>>'
+
+                command: |
+                    if [[ "${<< parameters.skip-job-var >>}" == "1" ]] ; then
+                        # Ensure there is a file (even if empty), otherwise persist step will fail.
+                        touch "<< parameters.job-file >>"
+                        echo "Skipping..."
+                        exit 0
+                    fi
+
+                    if [[ "<< parameters.api-token-var >>" != "HAL_API_TOKEN" ]] ; then
+                        echo "export HAL_API_TOKEN=${<< parameters.api-token-var >>}" >> $BASH_ENV
+                    fi
+
+                    publish-build-to-hal \
+                        --environment "<< parameters.environment >>"<<# parameters.arguments >> << parameters.arguments >><</parameters.arguments >> \
+                        <<# parameters.from_deployment_setting >> --from-setting << parameters.from_deployment_setting >><</parameters.from_deployment_setting >>
+
+    - unless:
+        condition: '<< parameters.environment >>'
+        steps:
+            - run:
+                name: 'Start build in Hal (any environment)'
+                environment:
+                    - HAL_APP_ID: '<<parameters.hal-appid>>'
+                    - HAL_ARTIFACT_PATH: ''
+                    - HAL_API_WAIT: '<<parameters.timeout-minutes>>'
+                    - HAL_OUTPUT_FILE: '<<parameters.job-file>>'
+
+                command: |
+                    if [[ "${<< parameters.skip-job-var >>}" == "1" ]] ; then
+                        # Ensure there is a file (even if empty), otherwise persist step will fail.
+                        touch "<< parameters.job-file >>"
+                        echo "Skipping..."
+                        exit 0
+                    fi
+
+                    if [[ "<< parameters.api-token-var >>" != "HAL_API_TOKEN" ]] ; then
+                        echo "export HAL_API_TOKEN=${<< parameters.api-token-var >>}" >> $BASH_ENV
+                    fi
+
+                    publish-build-to-hal<<# parameters.arguments >> << parameters.arguments >><</parameters.arguments >>
+
+    - when:
+        condition: << parameters.persist-job-to-workspace >>
+        steps:
+            - persist_to_workspace:
+                root: '<< parameters.workspace-root >>'
+                paths: [ << parameters.job-file >> ]

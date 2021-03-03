@@ -1,0 +1,31 @@
+description: |
+    Starting a job and pass extra arguments (parameters) to Hal.
+
+    NOTE: All jobs support this variable (build, publish, deploy).
+
+usage:
+    version: 2.1
+
+    orbs:
+        hal: quickenloans/hal@x.y.z
+
+    workflows:
+        my_example_pipeline:
+            jobs:
+                - hal/checkout
+
+                - hal/build:
+                    requires: [ hal/checkout ]
+                    context: 'my_secrets'
+
+                    hal-appid: 'XXXXXX'
+                    arguments: '--meta-example-variable "testvalue3"'
+
+                - hal/deploy:
+                    requires: [ hal/build ]
+                    context: 'my_secrets'
+
+                    deploy-setting-id: 'YYYYYY'
+                    arguments: |
+                        --meta-myvar "alfa" \
+                        --meta-myvar2 "bravo"

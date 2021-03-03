@@ -1,0 +1,26 @@
+description: |
+    Store an artifact in CircleCI and pass that build artifact while starting a
+    build job in the Hal Deployment Portal.
+
+usage:
+    version: 2.1
+
+    orbs:
+        hal: quickenloans/hal@x.y.z
+
+    workflows:
+        my_example_pipeline:
+            jobs:
+                - hal/checkout:
+                    workspace-root: '.' # Default value (can be deleted)
+                    persist-path: '.'   # Default value (can be deleted)
+
+                - hal/publish:
+                    requires: [ hal/checkout ]
+                    context: 'my_secrets'
+
+                    hal-appid: 'XXXXXX'
+                    workspace-root: '.'       # Default value (can be deleted)
+                    job-file: '.hal_build_id' # Default value (can be deleted)
+                    artifact-path: './mybuildfiles'
+                    artifact-compression: 'tgz'
